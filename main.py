@@ -48,7 +48,30 @@ def preprocess_mesh(mesh):
     mesh.apply_translation([0, 0, -min_z])
 
 
-def visualize(mesh, angles):
+def create_supports(mesh, angles):
+    support_prisms = []
+    z_min = mesh.bounds[0][2]  # XY平面のZ座標
+    for i, angle in enumerate(angles):
+        if 120 <= angle <= 180:
+            face = mesh.faces[i]
+            vertices = mesh.vertices[face]
+
+            # サポート材の頂点を作成
+            support_vertices = np.vstack(
+                (vertices, np.hstack((vertices[:, :2], np.full((3, 1), z_min)))))
+
+            # サポート材の面を作成
+            support_faces = [
+                [0, 1, 2], [3, 4, 5],  # 上面と下面
+                [0, 1, 4], [0, 4, 3],  # 側面
+                [1, 2, 5], [1, 5, 4],
+                [2, 0, 3], [2, 3, 5]
+            ]
+            support_prisms.append((support_vertices, support_faces))
+    return support_prisms
+
+
+def visualize(mesh, angles, support_prisms):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
@@ -68,6 +91,12 @@ def visualize(mesh, angles):
         mesh.vertices[mesh.faces], facecolors=face_colors)
     ax.add_collection3d(mesh_collection)
 
+    # サポート材の可視化
+    for vertices, faces in support_prisms:
+        support_collection = Poly3DCollection(
+            [vertices[face] for face in faces], facecolors='lightblue', alpha=0.5)
+        ax.add_collection3d(support_collection)
+
     min_bounds, max_bounds = mesh.bounds
     ax.auto_scale_xyz(min_bounds, max_bounds, max_bounds)
 
@@ -84,7 +113,7 @@ def visualize(mesh, angles):
 
     # PNGファイルとして保存
     plt.savefig('3DBenchy_supports_with_legend.png', bbox_inches='tight')
-    plt.show()
+    # plt.show()
 
 
 def main(model_stl_file_path):
@@ -99,11 +128,20 @@ def main(model_stl_file_path):
     # オーバーハング角度を計算
     angles = calculate_support_volume(model_mesh)
 
+    # サポート材を作成
+    support_prisms = create_supports(model_mesh, angles)
+
+    # サポート材の体積を計算
+    support_volumes = [trimesh.Trimesh(vertices=vertices, faces=faces).volume
+                       for vertices, faces in support_prisms]
+
     print(f'モデルメッシュの頂点数: {len(model_mesh.vertices)}')
     print(f'モデルの体積: {model_volume} 立方単位')
+    print(f'サポート材の数: {len(support_prisms)}')
+    print(f'サポート材の体積の合計: {np.sum(support_volumes)} 立方単位')
 
     # 可視化
-    visualize(model_mesh, angles)
+    visualize(model_mesh, angles, support_prisms)
 
 
 # 使用例
